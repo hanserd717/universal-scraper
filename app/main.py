@@ -18,6 +18,7 @@ from app.api.auth_routes import router as auth_router
 from app.api.project_routes import router as project_router
 from app.api.export_routes import router as export_router
 from app.api.ws_routes import router as ws_router
+from app.api.catalog_routes import router as catalog_router
 
 logging.basicConfig(level=settings.log_level)
 
@@ -27,6 +28,7 @@ app.include_router(auth_router)
 app.include_router(project_router)
 app.include_router(export_router)
 app.include_router(ws_router)
+app.include_router(catalog_router)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")

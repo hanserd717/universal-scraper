@@ -24,9 +24,9 @@ LANG_CHOICES = {"original", "ru", "en", "both"}
 
 def _base_row(item: Item) -> dict:
     return {
+        "category": item.category,
         "title": item.title,
         "description": item.description,
-        "category": item.category,
         "subcategory": item.subcategory,
         "price": item.price,
         "image_url": item.image_url,

@@ -29,6 +29,19 @@
       <button onclick="createProject()" class="bg-green-600 text-white px-4 py-2 rounded mt-2">Создать проект</button>
     </div>
 
+    <div id="catalog-block" class="bg-white rounded-lg shadow p-6 mb-6">
+      <h2 class="text-lg font-semibold mb-2">🤖 AI-подбор сервисов по категориям</h2>
+      <p class="text-xs text-gray-500 mb-4">
+        AI предлагает известные сервисы на основе своих обучающих данных (без живого веб-поиска) —
+        список может быть неполным или немного устаревшим. Проверяйте вручную перед публикацией.
+      </p>
+      <input id="catalog-name" placeholder="Название проекта" class="border rounded px-3 py-2 mr-2 mb-2" />
+      <input id="catalog-categories" placeholder="Категории через запятую: Крипта, Хостинг, Мессенджеры" class="border rounded px-3 py-2 mr-2 mb-2 w-96" />
+      <input id="catalog-count" type="number" min="1" max="20" value="5" placeholder="Кол-во на категорию" class="border rounded px-3 py-2 mr-2 mb-2 w-24" />
+      <button onclick="discoverCatalog()" class="bg-purple-600 text-white px-4 py-2 rounded mb-2">Сгенерировать через AI</button>
+      <p id="catalog-status" class="text-sm text-gray-500"></p>
+    </div>
+
     <div id="projects-list" class="space-y-4"></div>
   </div>
 

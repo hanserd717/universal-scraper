@@ -54,6 +54,36 @@ async function createProject() {
   }
 }
 
+async function discoverCatalog() {
+  const name = document.getElementById("catalog-name").value;
+  const categoriesRaw = document.getElementById("catalog-categories").value;
+  const count = parseInt(document.getElementById("catalog-count").value, 10) || 5;
+  const categories = categoriesRaw.split(",").map((c) => c.trim()).filter(Boolean);
+
+  const status = document.getElementById("catalog-status");
+
+  if (!name || categories.length === 0) {
+    alert("Укажите название проекта и хотя бы одну категорию");
+    return;
+  }
+
+  status.textContent = "AI подбирает сервисы... это может занять до минуты";
+
+  const resp = await fetch("/catalog/discover", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ name, categories, count_per_category: count }),
+  });
+
+  if (resp.ok) {
+    status.textContent = "Готово! Проект создан ниже.";
+    loadProjects();
+  } else {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    status.textContent = "Ошибка: " + (err.detail || resp.status);
+  }
+}
+
 async function loadProjects() {
   const resp = await fetch("/projects", { headers: authHeaders() });
   if (!resp.ok) return;
