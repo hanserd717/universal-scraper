@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models import Project, Item, User
 from app.security import get_current_user
 from app.exports.exporter import export_to_excel, export_to_csv, export_to_json
-from app.ai.translator import translate, LANGUAGE_NAMES
+from app.ai.translator import translate_batch
 
 router = APIRouter(prefix="/projects", tags=["export"])
 
@@ -22,14 +22,8 @@ MEDIA_TYPES = {
 LANG_CHOICES = {"original", "ru", "en", "both"}
 
 
-async def _translated_item(db: AsyncSession, item: Item, lang: str) -> dict:
-    """
-    Строит словарь для экспорта с переводом. Перевод последовательный (не параллельный) —
-    AsyncSession SQLAlchemy не безопасна для конкурентных операций на одной сессии,
-    а параллельные сессии на каждый item усложнили бы код непропорционально MVP-задаче.
-    Для больших каталогов (тысячи items) это может занять время — учитывайте при экспорте.
-    """
-    base = {
+def _base_row(item: Item) -> dict:
+    return {
         "title": item.title,
         "description": item.description,
         "category": item.category,
@@ -40,20 +34,40 @@ async def _translated_item(db: AsyncSession, item: Item, lang: str) -> dict:
         "rating": item.rating,
     }
 
+
+async def _build_export_rows(db: AsyncSession, db_items: list[Item], lang: str) -> list[dict]:
+    """
+    Собирает все нужные к переводу тексты СРАЗУ по всему каталогу и переводит
+    их одним параллельным batch-вызовом (см. translate_batch), а не по одному
+    item за раз — именно последовательный перевод на больших каталогах
+    упирался в gateway-таймаут Railway (502 Bad Gateway).
+    """
+    rows = [_base_row(i) for i in db_items]
+
     if lang == "original":
-        return base
+        return rows
 
     if lang in ("ru", "en"):
-        base["title"] = await translate(db, item.title, target_language=lang)
-        base["description"] = await translate(db, item.description, target_language=lang)
-        return base
+        all_texts = [i.title for i in db_items] + [i.description for i in db_items]
+        translated_map = await translate_batch(db, all_texts, target_language=lang)
+        for row, item in zip(rows, db_items):
+            row["title"] = translated_map.get(item.title, item.title)
+            row["description"] = translated_map.get(item.description, item.description)
+        return rows
 
-    # lang == "both": оригинал остаётся в title/description, переводы - в отдельных колонках
-    base["title_ru"] = await translate(db, item.title, target_language="ru")
-    base["description_ru"] = await translate(db, item.description, target_language="ru")
-    base["title_en"] = await translate(db, item.title, target_language="en")
-    base["description_en"] = await translate(db, item.description, target_language="en")
-    return base
+    # lang == "both": RU и EN батчи идут последовательно (каждый сам по себе уже
+    # параллелит запросы к OpenAI внутри). Гнать RU и EN через asyncio.gather
+    # друг с другом НЕЛЬЗЯ - оба используют одну и ту же AsyncSession, а она
+    # не потокобезопасна для конкурентного использования несколькими корутинами.
+    all_texts = [i.title for i in db_items] + [i.description for i in db_items]
+    ru_map = await translate_batch(db, all_texts, target_language="ru")
+    en_map = await translate_batch(db, all_texts, target_language="en")
+    for row, item in zip(rows, db_items):
+        row["title_ru"] = ru_map.get(item.title, item.title)
+        row["description_ru"] = ru_map.get(item.description, item.description)
+        row["title_en"] = en_map.get(item.title, item.title)
+        row["description_en"] = en_map.get(item.description, item.description)
+    return rows
 
 
 @router.get("/{project_id}/export/{fmt}")
@@ -80,14 +94,11 @@ async def export_items(
     result = await db.execute(select(Item).where(Item.project_id == project_id))
     db_items = result.scalars().all()
 
-    if lang != "original":
-        try:
-            items = [await _translated_item(db, i, lang) for i in db_items]
-        except RuntimeError as exc:
-            # translator._get_client() бросает RuntimeError, если OPENAI_API_KEY не задан
-            raise HTTPException(status_code=400, detail=str(exc))
-    else:
-        items = [await _translated_item(db, i, "original") for i in db_items]
+    try:
+        items = await _build_export_rows(db, db_items, lang)
+    except RuntimeError as exc:
+        # translator._get_client() бросает RuntimeError, если OPENAI_API_KEY не задан
+        raise HTTPException(status_code=400, detail=str(exc))
 
     if fmt == "excel":
         content = export_to_excel(items)
