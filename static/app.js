@@ -71,7 +71,7 @@ async function loadProjects() {
       </div>
       <div class="space-x-2">
         <button onclick="startParsing('${p.id}')" class="bg-blue-600 text-white px-3 py-1 rounded">▶ Start</button>
-        <a href="/projects/${p.id}/export/excel" class="bg-gray-200 px-3 py-1 rounded inline-block">📄 Excel</a>
+        <button onclick="downloadExport('${p.id}', 'excel', '${p.name}')" class="bg-gray-200 px-3 py-1 rounded">📄 Excel</button>
       </div>
     `;
     container.appendChild(card);
@@ -81,6 +81,32 @@ async function loadProjects() {
 
 async function startParsing(projectId) {
   await fetch(`/projects/${projectId}/start`, { method: "POST", headers: authHeaders() });
+}
+
+async function downloadExport(projectId, fmt, projectName) {
+  // Обычная <a href> ссылка не прикладывает Authorization-заголовок, а эндпоинт
+  // экспорта защищён JWT — поэтому качаем через fetch с токеном, а не напрямую по ссылке.
+  const resp = await fetch(`/projects/${projectId}/export/${fmt}`, { headers: authHeaders() });
+
+  if (!resp.ok) {
+    if (resp.status === 401) {
+      alert("Сессия истекла или вы не вошли в систему — войдите заново.");
+    } else {
+      alert("Не удалось скачать экспорт (код " + resp.status + ")");
+    }
+    return;
+  }
+
+  const blob = await resp.blob();
+  const ext = fmt === "excel" ? "xlsx" : fmt;
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = downloadUrl;
+  link.download = `${projectName}.${ext}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(downloadUrl);
 }
 
 function subscribeProgress(projectId) {
