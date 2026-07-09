@@ -69,9 +69,15 @@ async function loadProjects() {
         <div class="font-semibold">${p.name}</div>
         <div class="text-sm text-gray-500">${p.url} — статус: <span id="status-${p.id}">${p.status}</span></div>
       </div>
-      <div class="space-x-2">
+      <div class="space-x-2 flex items-center">
         <button onclick="startParsing('${p.id}')" class="bg-blue-600 text-white px-3 py-1 rounded">▶ Start</button>
-        <button onclick="downloadExport('${p.id}', 'excel', '${p.name}')" class="bg-gray-200 px-3 py-1 rounded">📄 Excel</button>
+        <select id="lang-${p.id}" class="border rounded px-2 py-1 text-sm">
+          <option value="original">Без перевода</option>
+          <option value="ru">Перевод RU</option>
+          <option value="en">Перевод EN</option>
+          <option value="both">Оригинал + RU + EN</option>
+        </select>
+        <button onclick="downloadExport(event, '${p.id}', 'excel', '${p.name}')" class="bg-gray-200 px-3 py-1 rounded">📄 Excel</button>
       </div>
     `;
     container.appendChild(card);
@@ -83,30 +89,50 @@ async function startParsing(projectId) {
   await fetch(`/projects/${projectId}/start`, { method: "POST", headers: authHeaders() });
 }
 
-async function downloadExport(projectId, fmt, projectName) {
+async function downloadExport(evt, projectId, fmt, projectName) {
   // Обычная <a href> ссылка не прикладывает Authorization-заголовок, а эндпоинт
   // экспорта защищён JWT — поэтому качаем через fetch с токеном, а не напрямую по ссылке.
-  const resp = await fetch(`/projects/${projectId}/export/${fmt}`, { headers: authHeaders() });
+  const langSelect = document.getElementById(`lang-${projectId}`);
+  const lang = langSelect ? langSelect.value : "original";
 
-  if (!resp.ok) {
-    if (resp.status === 401) {
-      alert("Сессия истекла или вы не вошли в систему — войдите заново.");
-    } else {
-      alert("Не удалось скачать экспорт (код " + resp.status + ")");
-    }
-    return;
+  const button = evt ? evt.target : null;
+  const originalText = button ? button.textContent : null;
+  if (button) {
+    button.textContent = lang === "original" ? "Скачивание..." : "Перевожу... (может занять время)";
+    button.disabled = true;
   }
 
-  const blob = await resp.blob();
-  const ext = fmt === "excel" ? "xlsx" : fmt;
-  const downloadUrl = window.URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = downloadUrl;
-  link.download = `${projectName}.${ext}`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.URL.revokeObjectURL(downloadUrl);
+  try {
+    const resp = await fetch(`/projects/${projectId}/export/${fmt}?lang=${lang}`, {
+      headers: authHeaders(),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      if (resp.status === 401) {
+        alert("Сессия истекла или вы не вошли в систему — войдите заново.");
+      } else {
+        alert("Не удалось скачать экспорт: " + (err.detail || resp.status));
+      }
+      return;
+    }
+
+    const blob = await resp.blob();
+    const ext = fmt === "excel" ? "xlsx" : fmt;
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `${projectName}.${ext}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  } finally {
+    if (button) {
+      button.textContent = originalText;
+      button.disabled = false;
+    }
+  }
 }
 
 function subscribeProgress(projectId) {

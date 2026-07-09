@@ -15,7 +15,9 @@ from app.ai.analyzer import _get_client
 
 logger = logging.getLogger(__name__)
 
-TRANSLATE_PROMPT = """Переведи текст с английского на русский для каталога товаров/услуг.
+TRANSLATE_PROMPT = """Переведи следующий текст каталога товаров/услуг на {target_language_name}.
+Текст может быть на любом исходном языке — определи его автоматически.
+Если текст уже на {target_language_name}, верни его как есть, без изменений.
 
 ВАЖНО — НЕ переводи:
 - названия брендов и компаний
@@ -30,6 +32,11 @@ TRANSLATE_PROMPT = """Переведи текст с английского на
 Текст: {text}
 """
 
+LANGUAGE_NAMES = {
+    "ru": "русский язык (Russian)",
+    "en": "английский язык (English)",
+}
+
 
 def _hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -38,6 +45,12 @@ def _hash_text(text: str) -> str:
 async def translate(db: AsyncSession, text: str, target_language: str = "ru") -> str:
     if not text:
         return text
+
+    if target_language not in LANGUAGE_NAMES:
+        raise ValueError(
+            f"Неподдерживаемый язык перевода: {target_language!r}. "
+            f"Доступны: {list(LANGUAGE_NAMES)}"
+        )
 
     text_hash = _hash_text(text)
     result = await db.execute(
@@ -52,9 +65,13 @@ async def translate(db: AsyncSession, text: str, target_language: str = "ru") ->
         return cached.translated_text
 
     client = _get_client()
+    prompt = TRANSLATE_PROMPT.format(
+        target_language_name=LANGUAGE_NAMES[target_language],
+        text=text,
+    )
     response = client.chat.completions.create(
         model=settings.openai_model,
-        messages=[{"role": "user", "content": TRANSLATE_PROMPT.format(text=text)}],
+        messages=[{"role": "user", "content": prompt}],
         temperature=0.1,
     )
     translated = response.choices[0].message.content.strip()
