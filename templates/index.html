@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Universal AI Web Scraper</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css"></script>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <div class="max-w-4xl mx-auto p-8">
+    <h1 class="text-2xl font-bold mb-6">Universal AI Web Scraper</h1>
+
+    <div id="auth-block" class="bg-white rounded-lg shadow p-6 mb-6">
+      <h2 class="text-lg font-semibold mb-4">Вход / регистрация</h2>
+      <input id="email" type="email" placeholder="Email" class="border rounded px-3 py-2 mr-2" />
+      <input id="password" type="password" placeholder="Пароль" class="border rounded px-3 py-2 mr-2" />
+      <button onclick="register()" class="bg-gray-200 px-4 py-2 rounded mr-2">Регистрация</button>
+      <button onclick="login()" class="bg-blue-600 text-white px-4 py-2 rounded">Войти</button>
+      <p id="auth-status" class="text-sm text-gray-500 mt-2"></p>
+    </div>
+
+    <div id="projects-block" class="bg-white rounded-lg shadow p-6 mb-6">
+      <h2 class="text-lg font-semibold mb-4">+ Добавить сайт</h2>
+      <input id="proj-name" placeholder="Название проекта" class="border rounded px-3 py-2 mr-2" />
+      <input id="proj-url" placeholder="https://example.com" class="border rounded px-3 py-2 mr-2 w-64" />
+      <label class="text-sm block mt-2">
+        <input type="checkbox" id="legal-confirm" /> Я подтверждаю право на сбор данных с этого источника
+      </label>
+      <button onclick="createProject()" class="bg-green-600 text-white px-4 py-2 rounded mt-2">Создать проект</button>
+    </div>
+
+    <div id="projects-list" class="space-y-4"></div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
