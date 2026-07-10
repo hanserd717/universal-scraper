@@ -4,6 +4,9 @@ AI-каталог: альтернативный способ наполнени�
 как обычный Project/Item, поэтому дальше работает весь существующий экспорт
 (Excel/CSV/JSON, с переводом RU/EN) без изменений.
 """
+import re
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,6 +43,12 @@ class CatalogDiscoverRequest(BaseModel):
         return v
 
 
+def _slugify(name: str) -> str:
+    slug = name.lower().strip()
+    slug = re.sub(r"[^a-z0-9а-яё]+", "-", slug)
+    return slug.strip("-") or "item"
+
+
 @router.post("/discover", response_model=ProjectOut)
 async def discover_catalog(
     payload: CatalogDiscoverRequest,
@@ -62,6 +71,9 @@ async def discover_catalog(
     db.add(project)
     await db.flush()  # получаем project.id, не коммитим ещё
 
+    added_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     try:
         seen_source_urls = set()
         for category in payload.categories:
@@ -70,16 +82,37 @@ async def discover_catalog(
                 name = (service.get("name") or "").strip()
                 if not name:
                     continue
-                source_url = service.get("url") or f"ai-generated://{category}/{name}"
+
+                clearnet_url = service.get("clearnet_url") or ""
+                source_url = clearnet_url or f"ai-generated://{category}/{name}"
                 if source_url in seen_source_urls:
                     continue  # AI мог повторить один и тот же сервис - source_url уникален в рамках проекта
                 seen_source_urls.add(source_url)
+
+                short_desc_en = service.get("short_description_en") or None
+
                 db.add(Item(
                     project_id=project.id,
                     title=name,
-                    description=service.get("description") or None,
+                    description=short_desc_en,  # для обратной совместимости с обычным экспортом/переводом
                     category=category,
                     source_url=source_url,
+                    slug=_slugify(name),
+                    status_ru="Найдено AI (требует проверки)",
+                    status_en="AI-suggested (needs review)",
+                    added_month=added_month,
+                    clearnet_url=clearnet_url or None,
+                    tor_url=service.get("tor_url") or None,
+                    telegram=service.get("telegram") or None,
+                    short_description_en=short_desc_en,
+                    full_description_en=service.get("full_description_en") or None,
+                    official_website=service.get("official_website") or clearnet_url or None,
+                    country=service.get("country") or None,
+                    language=service.get("language") or None,
+                    supported_cryptocurrencies=service.get("supported_cryptocurrencies") or None,
+                    payment_methods=service.get("payment_methods") or None,
+                    data_source="AI",
+                    last_checked_at=today,
                 ))
     except RuntimeError as exc:
         await db.rollback()

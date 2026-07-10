@@ -17,56 +17,102 @@ MEDIA_TYPES = {
     "json": "application/json",
 }
 
-# "original" - без перевода; "ru"/"en" - только перевод на этот язык (заменяет колонки);
-# "both" - оригинал + отдельные колонки title_ru/description_ru/title_en/description_en
+# "original" - без AI-перевода, что записано, то и выводим (в т.ч. пустые ячейки,
+# если данных нет - см. заполнение через AI-каталог, app/api/catalog_routes.py);
+# "ru"/"en"/"both" - дополнительно ПРОСИТ AI перевести короткое описание на
+# недостающий язык там, где есть только один вариант (например, при обычном
+# парсинге сайта, где своего RU/EN разделения нет).
 LANG_CHOICES = {"original", "ru", "en", "both"}
 
+# Точный порядок и русские заголовки колонок под шаблон каталога.
+# Второй элемент кортежа - функция получения значения из Item.
+TEMPLATE_COLUMNS = [
+    ("Название", lambda i: i.title),
+    ("Slug", lambda i: i.slug),
+    ("Тег", lambda i: i.tag),
+    ("Статус RU", lambda i: i.status_ru),
+    ("Статус EN", lambda i: i.status_en),
+    ("Добавлен (YYYY-MM)", lambda i: i.added_month),
+    ("Категория", lambda i: i.category),
+    ("Подкатегория", lambda i: i.subcategory),
+    ("Clearnet URL", lambda i: i.clearnet_url or i.source_url),
+    ("Tor URL (.onion)", lambda i: i.tor_url),
+    ("App Store URL", lambda i: i.app_store_url),
+    ("Google Play URL", lambda i: i.google_play_url),
+    ("Telegram", lambda i: i.telegram),
+    ("Краткое описание RU", lambda i: i.short_description_ru),
+    ("Краткое описание EN", lambda i: i.short_description_en or i.description),
+    ("Полное описание RU", lambda i: i.full_description_ru),
+    ("Полное описание EN", lambda i: i.full_description_en),
+    ("Возможности (RU/EN)", lambda i: i.features),
+    ("Официальный сайт", lambda i: i.official_website or i.clearnet_url or i.source_url),
+    ("Логотип (URL)", lambda i: i.logo_url or i.image_url),
+    ("Скриншот (URL)", lambda i: i.screenshot_url),
+    ("Страна", lambda i: i.country),
+    ("Язык", lambda i: i.language),
+    ("Валюты", lambda i: i.currencies),
+    ("Способы оплаты", lambda i: i.payment_methods),
+    ("Поддерживаемые криптовалюты", lambda i: i.supported_cryptocurrencies),
+    ("Email", lambda i: i.email),
+    ("Социальные сети", lambda i: i.social_media),
+    ("Рейтинг", lambda i: i.rating),
+    ("Количество отзывов", lambda i: i.review_count),
+    ("Источник", lambda i: i.data_source),
+    ("Дата последней проверки", lambda i: i.last_checked_at),
+    ("Дата добавления", lambda i: i.created_at.strftime("%Y-%m-%d") if i.created_at else None),
+    ("Примечания", lambda i: i.notes),
+]
 
-def _base_row(item: Item) -> dict:
-    return {
-        "category": item.category,
-        "title": item.title,
-        "description": item.description,
-        "subcategory": item.subcategory,
-        "price": item.price,
-        "image_url": item.image_url,
-        "source_url": item.source_url,
-        "rating": item.rating,
-    }
+
+def _row_from_item(item: Item, row_id: int) -> dict:
+    row = {"ID": row_id}
+    for header, getter in TEMPLATE_COLUMNS:
+        row[header] = getter(item)
+    return row
+
+
+async def _fill_missing_translations(db: AsyncSession, db_items: list[Item], rows: list[dict], lang: str):
+    """
+    Точечно дозаполняет 'Краткое описание RU'/'Краткое описание EN' там, где
+    один из вариантов есть, а другого нет (типичный случай для items,
+    собранных обычным парсингом сайта - там нет готового RU/EN разделения).
+    Не трогает остальные поля шаблона - их либо знает AI-каталог, либо они
+    остаются пустыми, как и предупреждали в UI.
+    """
+    if lang not in ("ru", "en", "both"):
+        return
+
+    need_ru = lang in ("ru", "both")
+    need_en = lang in ("en", "both")
+
+    if need_ru:
+        missing_ru_sources = [
+            row["Краткое описание EN"]
+            for row in rows
+            if not row["Краткое описание RU"] and row["Краткое описание EN"]
+        ]
+        if missing_ru_sources:
+            ru_map = await translate_batch(db, missing_ru_sources, target_language="ru")
+            for row in rows:
+                if not row["Краткое описание RU"] and row["Краткое описание EN"]:
+                    row["Краткое описание RU"] = ru_map.get(row["Краткое описание EN"])
+
+    if need_en:
+        missing_en_sources = [
+            row["Краткое описание RU"]
+            for row in rows
+            if not row["Краткое описание EN"] and row["Краткое описание RU"]
+        ]
+        if missing_en_sources:
+            en_map = await translate_batch(db, missing_en_sources, target_language="en")
+            for row in rows:
+                if not row["Краткое описание EN"] and row["Краткое описание RU"]:
+                    row["Краткое описание EN"] = en_map.get(row["Краткое описание RU"])
 
 
 async def _build_export_rows(db: AsyncSession, db_items: list[Item], lang: str) -> list[dict]:
-    """
-    Собирает все нужные к переводу тексты СРАЗУ по всему каталогу и переводит
-    их одним параллельным batch-вызовом (см. translate_batch), а не по одному
-    item за раз — именно последовательный перевод на больших каталогах
-    упирался в gateway-таймаут Railway (502 Bad Gateway).
-    """
-    rows = [_base_row(i) for i in db_items]
-
-    if lang == "original":
-        return rows
-
-    if lang in ("ru", "en"):
-        all_texts = [i.title for i in db_items] + [i.description for i in db_items]
-        translated_map = await translate_batch(db, all_texts, target_language=lang)
-        for row, item in zip(rows, db_items):
-            row["title"] = translated_map.get(item.title, item.title)
-            row["description"] = translated_map.get(item.description, item.description)
-        return rows
-
-    # lang == "both": RU и EN батчи идут последовательно (каждый сам по себе уже
-    # параллелит запросы к OpenAI внутри). Гнать RU и EN через asyncio.gather
-    # друг с другом НЕЛЬЗЯ - оба используют одну и ту же AsyncSession, а она
-    # не потокобезопасна для конкурентного использования несколькими корутинами.
-    all_texts = [i.title for i in db_items] + [i.description for i in db_items]
-    ru_map = await translate_batch(db, all_texts, target_language="ru")
-    en_map = await translate_batch(db, all_texts, target_language="en")
-    for row, item in zip(rows, db_items):
-        row["title_ru"] = ru_map.get(item.title, item.title)
-        row["description_ru"] = ru_map.get(item.description, item.description)
-        row["title_en"] = en_map.get(item.title, item.title)
-        row["description_en"] = en_map.get(item.description, item.description)
+    rows = [_row_from_item(item, idx) for idx, item in enumerate(db_items, start=1)]
+    await _fill_missing_translations(db, db_items, rows, lang)
     return rows
 
 

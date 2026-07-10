@@ -85,6 +85,21 @@ async def stop_parsing(
     return {"detail": "Остановлено (best-effort)"}
 
 
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Удаляет проект и все его items/pages (cascade, см. ondelete="CASCADE" в моделях).
+    Возвращает 204 без тела ответа при успехе.
+    """
+    project = await _get_owned_project(project_id, db, current_user)
+    await db.delete(project)
+    await db.commit()
+
+
 @router.get("/{project_id}/items", response_model=list[ItemOut])
 async def list_items(
     project_id: str,

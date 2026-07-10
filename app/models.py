@@ -98,6 +98,7 @@ class Item(Base):
     id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     project_id = Column(UUID(as_uuid=False), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
 
+    # Базовые поля (используются и обычным парсингом, и AI-каталогом)
     title = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     category = Column(String, nullable=True)
@@ -107,6 +108,39 @@ class Item(Base):
     image_storage_ref = Column(String, nullable=True)  # путь в S3, если картинка скачана
     source_url = Column(String, nullable=False)
     rating = Column(String, nullable=True)
+
+    # Поля под шаблон каталога (в основном заполняются AI-агентом при
+    # AI-подборе по категориям; при обычном парсинге сайта чаще всего
+    # остаются пустыми - экстрактор их не извлекает автоматически)
+    slug = Column(String, nullable=True)
+    tag = Column(String, nullable=True)
+    status_ru = Column(String, nullable=True)
+    status_en = Column(String, nullable=True)
+    added_month = Column(String, nullable=True)  # формат YYYY-MM
+    clearnet_url = Column(String, nullable=True)
+    tor_url = Column(String, nullable=True)
+    app_store_url = Column(String, nullable=True)
+    google_play_url = Column(String, nullable=True)
+    telegram = Column(String, nullable=True)
+    short_description_ru = Column(Text, nullable=True)
+    short_description_en = Column(Text, nullable=True)
+    full_description_ru = Column(Text, nullable=True)
+    full_description_en = Column(Text, nullable=True)
+    features = Column(Text, nullable=True)  # "Возможности (RU/EN)"
+    official_website = Column(String, nullable=True)
+    logo_url = Column(String, nullable=True)
+    screenshot_url = Column(String, nullable=True)
+    country = Column(String, nullable=True)
+    language = Column(String, nullable=True)
+    currencies = Column(String, nullable=True)
+    payment_methods = Column(String, nullable=True)
+    supported_cryptocurrencies = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    social_media = Column(String, nullable=True)
+    review_count = Column(Integer, nullable=True)
+    data_source = Column(String, nullable=True)  # откуда взята запись: "AI", "scraper", вручную и т.п.
+    last_checked_at = Column(String, nullable=True)  # формат YYYY-MM-DD
+    notes = Column(Text, nullable=True)
 
     content_hash = Column(String, nullable=True, index=True)  # для детекции изменений при повторном запуске
 

@@ -108,6 +108,7 @@ async function loadProjects() {
           <option value="both">Оригинал + RU + EN</option>
         </select>
         <button onclick="downloadExport(event, '${p.id}', 'excel', '${p.name}')" class="bg-gray-200 px-3 py-1 rounded">📄 Excel</button>
+        <button onclick="deleteProject('${p.id}', '${p.name}')" class="bg-red-600 text-white px-3 py-1 rounded">🗑 Удалить</button>
       </div>
     `;
     container.appendChild(card);
@@ -117,6 +118,23 @@ async function loadProjects() {
 
 async function startParsing(projectId) {
   await fetch(`/projects/${projectId}/start`, { method: "POST", headers: authHeaders() });
+}
+
+async function deleteProject(projectId, projectName) {
+  const confirmed = confirm(`Удалить проект "${projectName}" и все его данные? Это необратимо.`);
+  if (!confirmed) return;
+
+  const resp = await fetch(`/projects/${projectId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+
+  if (resp.ok) {
+    loadProjects();
+  } else {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    alert("Не удалось удалить проект: " + (err.detail || resp.status));
+  }
 }
 
 async function downloadExport(evt, projectId, fmt, projectName) {
